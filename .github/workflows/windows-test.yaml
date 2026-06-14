@@ -1,0 +1,64 @@
+name: Windows test build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "test/*"
+      - "test-gh/*"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  windows-test-build:
+    name: windows test build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fix microslop # https://github.com/microsoft/python-environment-tools/issues/171
+        run: git config --global core.longpaths true
+
+      - uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9
+        with:
+          tool: cargo-nextest
+
+      - name: run nextest
+        env:
+          MAKEOPTS: "-j2 -l2"
+          CARGO_BUILD_JOBS: "2"
+        run: cargo-nextest nextest run --workspace --no-fail-fast --success-output never --show-progress none
+
+      - name: Bundle windows
+        run: script/bundle-windows.ps1 -Architecture x86_64
+        shell: pwsh
+
+      - name: Create portable zip
+        shell: pwsh
+        run: |
+          $portableDir = "inno/x86_64"
+          $portableZip = "target/Gram-windows-x86_64-portable.zip"
+          if (-not (Test-Path -LiteralPath $portableDir)) {
+            throw "Portable directory not found: $portableDir"
+          }
+          Compress-Archive -Path "$portableDir/*" -DestinationPath $portableZip -Force
+          Get-Item -LiteralPath $portableZip
+
+      - name: upload portable zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: Gram-windows-x86_64-portable.zip
+          path: target/Gram-windows-x86_64-portable.zip
+          if-no-files-found: error
+
+      - name: upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: Gram-windows-x86_64-installer.exe
+          path: target/Gram-x86_64.exe
+          if-no-files-found: error
