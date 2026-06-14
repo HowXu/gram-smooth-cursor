@@ -1,8 +1,10 @@
 use gpui::Context;
 use settings::SettingsStore;
 use smol::Timer;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use ui::App;
+
+const SMOOTH_BLINK_FADE_DURATION_MS: f32 = 150.0;
 
 pub struct BlinkManager {
     blink_interval: Duration,
@@ -15,6 +17,14 @@ pub struct BlinkManager {
     enabled: bool,
     /// Whether the blinking is enabled in the settings.
     blink_enabled_in_settings: fn(&App) -> bool,
+    /// Whether smooth blink transitions are enabled.
+    smooth_blink_enabled: bool,
+    /// Current opacity for smooth blink transitions (0.0-1.0).
+    current_opacity: f32,
+    /// Target opacity for smooth blink transitions.
+    target_opacity: f32,
+    /// Last update time for smooth blink interpolation.
+    last_smooth_blink_update: Option<Instant>,
 }
 
 impl BlinkManager {
@@ -36,6 +46,10 @@ impl BlinkManager {
             visible: true,
             enabled: false,
             blink_enabled_in_settings,
+            smooth_blink_enabled: false,
+            current_opacity: 1.0,
+            target_opacity: 1.0,
+            last_smooth_blink_update: None,
         }
     }
 
@@ -44,8 +58,43 @@ impl BlinkManager {
         self.blink_epoch
     }
 
+    pub fn set_smooth_blink_enabled(&mut self, enabled: bool) {
+        self.smooth_blink_enabled = enabled;
+        self.current_opacity = if self.visible { 1.0 } else { 0.0 };
+        self.target_opacity = self.current_opacity;
+        self.last_smooth_blink_update = None;
+    }
+
+    /// Advance and return the smooth-blink opacity (0.0 = hidden, 1.0 = solid).
+    ///
+    /// Interpolates `current_opacity` toward `target_opacity` using elapsed
+    /// wall-clock time. It deliberately does not call `cx.notify()`: redraws
+    /// during a fade are driven by the cursor animation-frame loop, and
+    /// notifying here would invalidate the window's cached scene every frame.
+    pub fn opacity(&mut self) -> f32 {
+        if !self.smooth_blink_enabled {
+            return if self.visible { 1.0 } else { 0.0 };
+        }
+
+        let now = Instant::now();
+        if let Some(last_update) = self.last_smooth_blink_update {
+            let dt_ms = now.duration_since(last_update).as_secs_f32() * 1000.0;
+            let blend_factor = (dt_ms / SMOOTH_BLINK_FADE_DURATION_MS).clamp(0.0, 1.0);
+            self.current_opacity += (self.target_opacity - self.current_opacity) * blend_factor;
+        }
+        self.last_smooth_blink_update = Some(now);
+        self.current_opacity
+    }
+
+    pub fn is_smooth_blink_animating(&self) -> bool {
+        self.smooth_blink_enabled && (self.current_opacity - self.target_opacity).abs() > 0.01
+    }
+
+    /// Show the cursor immediately and pause blinking briefly. Called when the
+    /// user moves the cursor or types; blinking resumes after a short delay.
     pub fn pause_blinking(&mut self, cx: &mut Context<Self>) {
         self.show_cursor(cx);
+        self.blinking_paused = true;
 
         let epoch = self.next_blink_epoch();
         let interval = self.blink_interval;
@@ -59,7 +108,15 @@ impl BlinkManager {
     fn resume_cursor_blinking(&mut self, epoch: usize, cx: &mut Context<Self>) {
         if epoch == self.blink_epoch {
             self.blinking_paused = false;
-            self.blink_cursors(epoch, cx);
+            self.show_cursor(cx);
+            let interval = self.blink_interval;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(interval).await;
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |this, cx| this.blink_cursors(epoch, cx));
+                }
+            })
+            .detach();
         }
     }
 
@@ -67,6 +124,7 @@ impl BlinkManager {
         if (self.blink_enabled_in_settings)(cx) {
             if epoch == self.blink_epoch && self.enabled && !self.blinking_paused {
                 self.visible = !self.visible;
+                self.target_opacity = if self.visible { 1.0 } else { 0.0 };
                 cx.notify();
 
                 let epoch = self.next_blink_epoch();
@@ -86,10 +144,13 @@ impl BlinkManager {
     }
 
     pub fn show_cursor(&mut self, cx: &mut Context<BlinkManager>) {
-        if !self.visible {
-            self.visible = true;
-            cx.notify();
+        self.visible = true;
+        self.target_opacity = 1.0;
+        if self.smooth_blink_enabled {
+            self.current_opacity = 1.0;
+            self.last_smooth_blink_update = None;
         }
+        cx.notify();
     }
 
     /// Enable the blinking of the cursor.
@@ -113,5 +174,17 @@ impl BlinkManager {
 
     pub fn visible(&self) -> bool {
         self.visible
+    }
+
+    /// Whether the cursor should be rendered this frame.
+    /// For non-smooth-blink: same as `visible()`.
+    /// For smooth-blink: also true while the fade is in progress (opacity > 0),
+    /// so the cursor remains on-screen during the fade-out.
+    pub fn should_render(&self) -> bool {
+        if self.smooth_blink_enabled {
+            self.current_opacity > 0.01
+        } else {
+            self.visible
+        }
     }
 }

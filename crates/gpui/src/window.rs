@@ -893,6 +893,7 @@ pub struct Window {
     pub(crate) input_rate_tracker: Rc<RefCell<InputRateTracker>>,
     last_input_modality: InputModality,
     pub(crate) refreshing: bool,
+    animation_callbacks: Vec<Box<dyn FnOnce(&mut Window, &mut App) + 'static>>,
     pub(crate) activation_observers: SubscriberSet<(), AnyObserver>,
     pub(crate) focus: Option<FocusId>,
     focus_enabled: bool,
@@ -1362,6 +1363,7 @@ impl Window {
             input_rate_tracker,
             last_input_modality: InputModality::Mouse,
             refreshing: false,
+            animation_callbacks: Vec::new(),
             activation_observers: SubscriberSet::new(),
             focus: None,
             focus_enabled: true,
@@ -1789,6 +1791,21 @@ impl Window {
         self.on_next_frame(move |_, cx| cx.notify(entity));
     }
 
+    /// Request a frame for animation-only content. Gram currently falls back to
+    /// a normal animation frame instead of replaying a cached scene.
+    pub fn request_animation_only_frame(&self) {
+        self.on_next_frame(|window, _cx| window.refresh());
+    }
+
+    /// Register a callback that paints animated overlays after the normal frame
+    /// has been drawn.
+    pub fn on_animation_frame<F>(&mut self, callback: F)
+    where
+        F: FnOnce(&mut Window, &mut App) + 'static,
+    {
+        self.animation_callbacks.push(Box::new(callback));
+    }
+
     /// Spawn the future returned by the given closure on the application thread pool.
     /// The closure is provided a handle to the current window and an `AsyncWindowContext` for
     /// use within your future.
@@ -2075,6 +2092,7 @@ impl Window {
             self.rendered_frame.input_handlers.push(Some(input_handler));
         }
         self.draw_roots(cx);
+        self.run_animation_callbacks(cx);
         self.dirty_views.clear();
         self.next_frame.window_active = self.active.get();
 
@@ -2130,6 +2148,18 @@ impl Window {
         self.needs_present.set(true);
 
         ArenaClearNeeded
+    }
+
+    fn run_animation_callbacks(&mut self, cx: &mut App) {
+        if self.animation_callbacks.is_empty() {
+            return;
+        }
+
+        self.invalidator.set_phase(DrawPhase::Paint);
+        let callbacks = mem::take(&mut self.animation_callbacks);
+        for callback in callbacks {
+            callback(self, cx);
+        }
     }
 
     fn record_entities_accessed(&mut self, cx: &mut App) {
