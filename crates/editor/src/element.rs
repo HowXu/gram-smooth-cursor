@@ -42,7 +42,7 @@ use git::{Oid, blame::BlameEntry, commit::ParsedCommitMessage, status::FileStatu
 use gpui::{
     Action, Along, AnyElement, App, AppContext, AvailableSpace, Axis as ScrollbarAxis, BorderStyle,
     Bounds, ClickEvent, ClipboardItem, ContentMask, Context, Corner, Corners, CursorStyle,
-    DispatchPhase, Edges, Element, ElementInputHandler, Entity, Focusable as _, FontId,
+    DispatchPhase, Edges, Element, ElementInputHandler, Entity, Focusable as _, Font, FontId,
     GlobalElementId, Hitbox, HitboxBehavior, Hsla, InteractiveElement, IntoElement, IsZero, Length,
     Modifiers, ModifiersChangedEvent, MouseButton, MouseClickEvent, MouseDownEvent, MouseMoveEvent,
     MousePressureEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels, PressureStage, ScrollDelta,
@@ -1639,11 +1639,6 @@ impl EditorElement {
                         block_width = em_advance;
                     }
 
-                    // Check if cursor is in a redacted range
-                    let is_target_redacted = redacted_ranges
-                        .iter()
-                        .any(|range| range.start <= cursor_position && cursor_position < range.end);
-
                     // Compute font and color for block cursor text - needed for animation state
                     let mut block_cursor_font = cursor_row_layout
                         .font_id_for_index(cursor_column)
@@ -1669,8 +1664,7 @@ impl EditorElement {
                         cx.theme().colors().editor_background
                     };
 
-                    let block_text =
-                        if selection.cursor_shape == CursorShape::Block && !is_target_redacted {
+                    let block_text = if selection.cursor_shape == CursorShape::Block {
                             shape_block_cursor_text_for_point(
                                 &snapshot.display_snapshot,
                                 cursor_position,
@@ -1803,7 +1797,7 @@ impl EditorElement {
                             font: block_cursor_font.clone(),
                             font_size: cursor_row_layout.font_size,
                             block_text_color,
-                            is_target_redacted,
+                            is_target_redacted: false,
                             other_cursors: Vec::new(),
                         });
                     }
@@ -11500,8 +11494,7 @@ impl CursorLayout {
             return;
         }
 
-        let head_bounds = self.bounds(origin);
-        let bounds = window.pixel_snap_bounds(head_bounds);
+        let bounds = self.bounds(origin);
 
         if let Some(corners) = self.quad_corners {
             let corners_with_offset = [

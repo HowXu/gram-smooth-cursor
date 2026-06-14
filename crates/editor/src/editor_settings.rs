@@ -6,8 +6,8 @@ use project::project_settings::DiagnosticSeverity;
 pub use settings::{
     CurrentLineHighlight, DelayMs, DisplayIn, DocumentColorsRenderMode, DoubleClickInMultibuffer,
     GoToDefinitionFallback, HideMouseMode, MinimapThumb, MinimapThumbBorder, MultiCursorModifier,
-    ScrollBeyondLastLine, ScrollbarDiagnostics, SeedQuerySetting, ShowMinimap, SmoothCaretContent,
-    SmoothCaretSetting, SnippetSortOrder,
+    ScrollBeyondLastLine, ScrollbarDiagnostics, SeedQuerySetting, ShowMinimap, SmoothCaretSetting,
+    SnippetSortOrder,
 };
 use settings::{RegisterSetting, RelativeLineNumbers, Settings, SupertabFallback, SyncKillRing};
 use ui::scrollbars::{ScrollbarVisibility, ShowScrollbar};
