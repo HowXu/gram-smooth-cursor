@@ -7,7 +7,6 @@ pub mod terminal_scrollbar;
 use editor::{
     CursorAnimationTicker, Editor, EditorSettings, InertialCursorConfig, QuadCursor,
     actions::SelectAll, blink_manager::BlinkManager, tick_cursor_animation,
-    ui_scrollbar_settings_from_raw,
 };
 use gpui::{
     Action, AnyElement, App, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
