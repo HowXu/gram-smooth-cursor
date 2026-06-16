@@ -2912,6 +2912,14 @@ impl Editor {
         }
     }
 
+    pub fn cancel_cursor_animation_callback_cycle(&mut self) {
+        self.active_cursor_animation_callback_generation = None;
+        self.cursor_animation_ticker.stop();
+        if let Some(cursor) = &mut self.quad_cursor {
+            cursor.snap_to_logical();
+        }
+    }
+
     fn build_inertial_cursor_config(
         settings: &editor_settings::SmoothCaret,
     ) -> inertial_cursor::InertialCursorConfig {

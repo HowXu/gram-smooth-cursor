@@ -1608,6 +1608,7 @@ impl EditorElement {
             let show_local_cursors = editor.show_local_cursors(window, cx);
             let smooth_cursor_enabled = editor.quad_cursor().is_some();
             let is_editor_focused = editor.is_focused(window);
+            let read_only = editor.read_only(cx);
             let blink_opacity = editor
                 .blink_manager
                 .update(cx, |blink_manager, _cx| blink_manager.opacity());
@@ -1665,18 +1666,18 @@ impl EditorElement {
                     };
 
                     let block_text = if selection.cursor_shape == CursorShape::Block {
-                            shape_block_cursor_text_for_point(
-                                &snapshot.display_snapshot,
-                                cursor_position,
-                                snapshot.placeholder_text().as_deref(),
-                                &block_cursor_font,
-                                cursor_row_layout.font_size,
-                                block_text_color,
-                                window,
-                            )
-                        } else {
-                            None
-                        };
+                        shape_block_cursor_text_for_point(
+                            &snapshot.display_snapshot,
+                            cursor_position,
+                            snapshot.placeholder_text().as_deref(),
+                            &block_cursor_font,
+                            cursor_row_layout.font_size,
+                            block_text_color,
+                            window,
+                        )
+                    } else {
+                        None
+                    };
                     if let Some(shaped) = &block_text {
                         block_width = block_width.max(shaped.width);
                     }
@@ -1758,10 +1759,10 @@ impl EditorElement {
                         origin: point(x, y),
                         quad_corners,
                         line_height,
-                        opacity: if selection.is_local {
+                        opacity: if selection.is_local && !read_only {
                             blink_opacity // Includes smooth blink interpolation
                         } else {
-                            1.0 // Remote cursors
+                            1.0 // Remote cursors and read-only local cursors
                         },
                         // When editor is unfocused and smooth cursor is enabled, show hollow outline
                         shape: if !is_editor_focused && smooth_cursor_enabled && selection.is_local
@@ -1824,27 +1825,35 @@ impl EditorElement {
         // cached scene without re-running editor layout. Every visible cursor is
         // handed to the callback and `cursor_layouts` is returned empty, so
         // `paint_cursors` paints nothing and the cursor is never double-painted.
-        if is_animating && let Some(mut state) = animation_state {
-            if let Some(newest_index) = newest_cursor_index {
-                let mut other_cursors = Vec::with_capacity(cursor_layouts.len().saturating_sub(1));
-                for (index, cursor) in cursor_layouts.into_iter().enumerate() {
-                    if index != newest_index {
-                        other_cursors.push(cursor);
+        if is_animating {
+            if let Some(mut state) = animation_state {
+                if let Some(newest_index) = newest_cursor_index {
+                    let mut other_cursors =
+                        Vec::with_capacity(cursor_layouts.len().saturating_sub(1));
+                    for (index, cursor) in cursor_layouts.into_iter().enumerate() {
+                        if index != newest_index {
+                            other_cursors.push(cursor);
+                        }
                     }
+                    state.other_cursors = other_cursors;
                 }
-                state.other_cursors = other_cursors;
+
+                cursor_layouts = Vec::new();
+
+                let generation = self.editor.update(cx, |editor, _cx| {
+                    editor.begin_cursor_animation_callback_cycle()
+                });
+                state.generation = generation;
+
+                window.request_animation_only_frame();
+                window.on_animation_frame(move |window, cx| {
+                    paint_cursor_animation_frame(state, window, cx);
+                });
+            } else {
+                self.editor.update(cx, |editor, _cx| {
+                    editor.cancel_cursor_animation_callback_cycle()
+                });
             }
-            cursor_layouts = Vec::new();
-
-            let generation = self.editor.update(cx, |editor, _cx| {
-                editor.begin_cursor_animation_callback_cycle()
-            });
-            state.generation = generation;
-
-            window.request_animation_only_frame();
-            window.on_animation_frame(move |window, cx| {
-                paint_cursor_animation_frame(state, window, cx);
-            });
         }
 
         cursor_layouts

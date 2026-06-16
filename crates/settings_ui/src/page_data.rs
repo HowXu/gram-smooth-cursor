@@ -1,5 +1,5 @@
 use gpui::{Action as _, App};
-use settings::{LanguageSettingsContent, SettingsContent};
+use settings::{LanguageSettingsContent, SettingsContent, SmoothCaretSetting};
 use std::sync::Arc;
 use strum::IntoDiscriminant as _;
 use ui::{IntoElement, SharedString};
@@ -13,6 +13,7 @@ const DEFAULT_SHARED_STRING: SharedString = SharedString::new_static("");
 /// A default empty string reference. Useful in `pick` functions for cases either in dynamic item fields, or when dealing with `settings::Maybe`
 /// to avoid the "NO DEFAULT" case.
 const DEFAULT_EMPTY_SHARED_STRING: Option<&SharedString> = Some(&DEFAULT_SHARED_STRING);
+static DEFAULT_SMOOTH_CARET_CONFIG_ENABLED: bool = true;
 
 pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
     vec![
@@ -778,6 +779,39 @@ pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
                         json_path: Some("cursor_blink"),
                         pick: |settings_content| settings_content.editor.cursor_blink.as_ref(),
                         write: |settings_content, value|{  settings_content.editor.cursor_blink = value;},
+                    }),
+                    metadata: None,
+                    files: USER,
+                }),
+                SettingsPageItem::SettingItem(SettingItem {
+                    title: "Smooth Caret",
+                    description: "Whether the cursor uses smooth movement animation.",
+                    field: Box::new(SettingField {
+                        json_path: Some("smooth_caret"),
+                        pick: |settings_content| {
+                            match settings_content.editor.smooth_caret.as_ref() {
+                                Some(SmoothCaretSetting::Bool(enabled)) => Some(enabled),
+                                Some(SmoothCaretSetting::Config(config)) => config
+                                    .enabled
+                                    .as_ref()
+                                    .or(Some(&DEFAULT_SMOOTH_CARET_CONFIG_ENABLED)),
+                                _ => None,
+                            }
+                        },
+                        write: |settings_content, value| {
+                            settings_content.editor.smooth_caret =
+                                if let Some(value) = value {
+                                    match settings_content.editor.smooth_caret.take() {
+                                        Some(SmoothCaretSetting::Config(mut config)) => {
+                                            config.enabled = Some(value);
+                                            Some(SmoothCaretSetting::Config(config))
+                                        }
+                                        _ => Some(SmoothCaretSetting::Bool(value)),
+                                    }
+                                } else {
+                                    None
+                                };
+                        },
                     }),
                     metadata: None,
                     files: USER,

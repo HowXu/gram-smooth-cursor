@@ -108,15 +108,7 @@ impl BlinkManager {
     fn resume_cursor_blinking(&mut self, epoch: usize, cx: &mut Context<Self>) {
         if epoch == self.blink_epoch {
             self.blinking_paused = false;
-            self.show_cursor(cx);
-            let interval = self.blink_interval;
-            cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(interval).await;
-                if let Some(this) = this.upgrade() {
-                    this.update(cx, |this, cx| this.blink_cursors(epoch, cx));
-                }
-            })
-            .detach();
+            self.blink_cursors(epoch, cx);
         }
     }
 

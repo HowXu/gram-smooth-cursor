@@ -29,6 +29,43 @@ my opinion, both `VS Code` and `Zed` fail in this regard.
 - [Website](https://gram-editor.com)
 - [Documentation](https://gram-editor.com/docs)
 
+## About this fork
+
+This repository is a fork of Gram focused on smooth cursor movement. The
+feature is opt-in and disabled by default.
+
+To enable the smooth caret, add the following to your settings:
+
+```jsonc
+{
+  "smooth_caret": true
+}
+```
+
+For finer control, `smooth_caret` can also be configured as an object:
+
+```jsonc
+{
+  "smooth_caret": {
+    "enabled": true,
+    "animation_time_ms": 150,
+    "short_animation_time_ms": 40,
+    "trail_size": 0.7,
+    "animate_in_insert_mode": true,
+    "smooth_blink": true
+  }
+}
+```
+
+Available fields:
+
+- `enabled`: Enables or disables smooth cursor movement. Defaults to `false`.
+- `animation_time_ms`: Duration for larger cursor jumps, such as search or goto.
+- `short_animation_time_ms`: Duration for small cursor moves, such as typing.
+- `trail_size`: Controls responsiveness versus trailing motion, from `0.0` to `1.0`.
+- `animate_in_insert_mode`: Animates short insert-mode cursor movements.
+- `smooth_blink`: Uses opacity transitions for cursor blinking.
+
 ## Manifesto
 
 This project is first and foremost a source code editor. It aims to be a fast,
